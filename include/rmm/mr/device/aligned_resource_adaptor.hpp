@@ -181,7 +181,8 @@ class aligned_resource_adaptor final : public device_memory_resource {
     if (this == &other) { return true; }
     auto cast = dynamic_cast<aligned_resource_adaptor<Upstream> const*>(&other);
     return cast != nullptr &&
-           get_property(upstream_, rmm::legacy_device_mr{})->is_equal(*cast->get_upstream()) &&
+           get_property(upstream_, rmm::legacy_device_mr{})
+             ->is_equal(*get_property(cast->get_upstream(), rmm::legacy_device_mr{})) &&
            alignment_ == cast->alignment_ && alignment_threshold_ == cast->alignment_threshold_;
   }
 
