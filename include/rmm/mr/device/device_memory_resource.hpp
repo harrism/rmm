@@ -335,8 +335,8 @@ class device_memory_resource {
    *
    * This property is temporary during refactoring and will be removed.
    */
-  friend device_memory_resource* get_property(device_memory_resource const& mr,
-                                              rmm::legacy_device_mr) noexcept
+  friend rmm::legacy_device_mr::value_type get_property(device_memory_resource const& mr,
+                                                        rmm::legacy_device_mr) noexcept
   {
     return &const_cast<device_memory_resource&>(mr);
   }

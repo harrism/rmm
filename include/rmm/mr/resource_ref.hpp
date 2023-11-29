@@ -15,11 +15,14 @@
  */
 #pragma once
 
-#include <rmm/mr/device/device_memory_resource.hpp>
-
 #include <cuda/memory_resource>
 
 namespace rmm {
+
+// forward decl
+namespace mr {
+class device_memory_resource;
+}  // namespace mr
 
 /// @brief property to provide access to legacy device_memory_resource from device_resource_ref
 struct legacy_device_mr {
