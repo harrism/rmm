@@ -17,6 +17,7 @@
 
 #include <rmm/cuda_stream_view.hpp>
 #include <rmm/detail/aligned.hpp>
+#include <rmm/mr/resource_ref.hpp>
 
 #include <cuda/memory_resource>
 
@@ -325,6 +326,20 @@ class device_memory_resource {
    * This property declares that a `device_memory_resource` provides device accessible memory
    */
   friend void get_property(device_memory_resource const&, cuda::mr::device_accessible) noexcept {}
+
+  /**
+   * @brief Enables the `rmm::mr::legacy_device_mr` property
+   *
+   * This property allows a `cuda::mr::async_resource_ref<rmm::mr::legacy_device_mr>` to return
+   * a pointer to the underlying (legacy) `rmm::mr::device_memory_resource`.
+   *
+   * This property is temporary during refactoring and will be removed.
+   */
+  friend device_memory_resource* get_property(device_memory_resource const& mr,
+                                              rmm::legacy_device_mr) noexcept
+  {
+    return &const_cast<device_memory_resource&>(mr);
+  }
 
  private:
   /**

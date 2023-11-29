@@ -15,6 +15,7 @@
  */
 
 #include "../../mock_resource.hpp"
+#include "rmm/mr/resource_ref.hpp"
 #include <rmm/detail/aligned.hpp>
 #include <rmm/detail/error.hpp>
 #include <rmm/mr/device/aligned_resource_adaptor.hpp>
@@ -29,8 +30,8 @@ namespace {
 
 using ::testing::Return;
 
-using aligned_mock = rmm::mr::aligned_resource_adaptor<mock_resource>;
-using aligned_real = rmm::mr::aligned_resource_adaptor<rmm::mr::device_memory_resource>;
+using aligned_mock = rmm::mr::aligned_resource_adaptor<rmm::device_resource_ref>;
+using aligned_real = rmm::mr::aligned_resource_adaptor<rmm::device_resource_ref>;
 
 void* int_to_address(std::size_t val)
 {
@@ -38,21 +39,14 @@ void* int_to_address(std::size_t val)
   return reinterpret_cast<void*>(val);
 }
 
-TEST(AlignedTest, ThrowOnNullUpstream)
-{
-  auto construct_nullptr = []() { aligned_mock mr{nullptr}; };
-  EXPECT_THROW(construct_nullptr(), rmm::logic_error);
-}
-
 TEST(AlignedTest, ThrowOnInvalidAllocationAlignment)
 {
   mock_resource mock;
-  auto construct_alignment = [](auto* memres, std::size_t align) {
-    aligned_mock mr{memres, align};
-  };
-  EXPECT_THROW(construct_alignment(&mock, 255), rmm::logic_error);
-  EXPECT_NO_THROW(construct_alignment(&mock, 256));
-  EXPECT_THROW(construct_alignment(&mock, 768), rmm::logic_error);
+  auto mock_ref            = rmm::device_resource_ref{mock};
+  auto construct_alignment = [](auto memres, std::size_t align) { aligned_mock mr{memres, align}; };
+  EXPECT_THROW(construct_alignment(mock_ref, 255), rmm::logic_error);
+  EXPECT_NO_THROW(construct_alignment(mock_ref, 256));
+  EXPECT_THROW(construct_alignment(mock_ref, 768), rmm::logic_error);
 }
 
 TEST(AlignedTest, SupportsStreams)

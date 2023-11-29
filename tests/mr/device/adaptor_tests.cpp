@@ -28,6 +28,7 @@
 #include <rmm/mr/device/statistics_resource_adaptor.hpp>
 #include <rmm/mr/device/thread_safe_resource_adaptor.hpp>
 #include <rmm/mr/device/tracking_resource_adaptor.hpp>
+#include <rmm/mr/resource_ref.hpp>
 
 #include <cuda/memory_resource>
 
@@ -127,7 +128,7 @@ TYPED_TEST(AdaptorTest, Equality)
   }
 
   {
-    rmm::mr::device_memory_resource* device_mr = &this->cuda;
+    rmm::device_resource_ref device_mr = &this->cuda;
     auto other_mr = aligned_resource_adaptor<rmm::mr::device_memory_resource>{device_mr};
     EXPECT_FALSE(this->mr->is_equal(other_mr));
   }

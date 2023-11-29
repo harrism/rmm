@@ -92,9 +92,8 @@ class device_scalar {
    * @param stream Stream on which to perform asynchronous allocation.
    * @param mr Optional, resource with which to allocate.
    */
-  explicit device_scalar(
-    cuda_stream_view stream,
-    rmm::mr::device_memory_resource* mr = rmm::mr::get_current_device_resource())
+  explicit device_scalar(cuda_stream_view stream,
+                         rmm::device_resource_ref mr = rmm::mr::get_current_device_resource())
     : _storage{1, stream, mr}
   {
   }
@@ -115,10 +114,9 @@ class device_scalar {
    * @param stream Optional, stream on which to perform allocation and copy.
    * @param mr Optional, resource with which to allocate.
    */
-  explicit device_scalar(
-    value_type const& initial_value,
-    cuda_stream_view stream,
-    rmm::mr::device_memory_resource* mr = rmm::mr::get_current_device_resource())
+  explicit device_scalar(value_type const& initial_value,
+                         cuda_stream_view stream,
+                         rmm::device_resource_ref mr = rmm::mr::get_current_device_resource())
     : _storage{1, stream, mr}
   {
     set_value_async(initial_value, stream);
@@ -138,7 +136,7 @@ class device_scalar {
    */
   device_scalar(device_scalar const& other,
                 cuda_stream_view stream,
-                rmm::mr::device_memory_resource* mr = rmm::mr::get_current_device_resource())
+                rmm::device_resource_ref mr = rmm::mr::get_current_device_resource())
     : _storage{other._storage, stream, mr}
   {
   }

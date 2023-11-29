@@ -19,6 +19,7 @@
 #include <rmm/detail/aligned.hpp>
 #include <rmm/detail/error.hpp>
 #include <rmm/mr/device/device_memory_resource.hpp>
+#include <rmm/mr/resource_ref.hpp>
 
 #include <cstddef>
 #include <mutex>
@@ -64,12 +65,11 @@ class aligned_resource_adaptor final : public device_memory_resource {
    * @param alignment_threshold Only allocations with a size larger than or equal to this threshold
    * are aligned.
    */
-  explicit aligned_resource_adaptor(Upstream* upstream,
+  explicit aligned_resource_adaptor(device_resource_ref upstream,
                                     std::size_t alignment = rmm::detail::CUDA_ALLOCATION_ALIGNMENT,
                                     std::size_t alignment_threshold = default_alignment_threshold)
     : upstream_{upstream}, alignment_{alignment}, alignment_threshold_{alignment_threshold}
   {
-    RMM_EXPECTS(nullptr != upstream, "Unexpected null upstream resource pointer.");
     RMM_EXPECTS(rmm::detail::is_supported_alignment(alignment),
                 "Allocation alignment is not a power of 2.");
   }
@@ -86,14 +86,14 @@ class aligned_resource_adaptor final : public device_memory_resource {
    *
    * @return Upstream* pointer to a memory resource object.
    */
-  Upstream* get_upstream() const noexcept { return upstream_; }
+  device_resource_ref get_upstream() const noexcept { return upstream_; }
 
   /**
    * @copydoc rmm::mr::device_memory_resource::supports_streams()
    */
   [[nodiscard]] bool supports_streams() const noexcept override
   {
-    return upstream_->supports_streams();
+    return get_property(upstream_, rmm::legacy_device_mr{})->supports_streams();
   }
 
   /**
@@ -103,7 +103,7 @@ class aligned_resource_adaptor final : public device_memory_resource {
    */
   [[nodiscard]] bool supports_get_mem_info() const noexcept override
   {
-    return upstream_->supports_get_mem_info();
+    return get_property(upstream_, rmm::legacy_device_mr{})->supports_get_mem_info();
   }
 
   /**
@@ -128,10 +128,10 @@ class aligned_resource_adaptor final : public device_memory_resource {
   void* do_allocate(std::size_t bytes, cuda_stream_view stream) override
   {
     if (alignment_ == rmm::detail::CUDA_ALLOCATION_ALIGNMENT || bytes < alignment_threshold_) {
-      return upstream_->allocate(bytes, stream);
+      return get_property(upstream_, rmm::legacy_device_mr{})->allocate(bytes, stream);
     }
     auto const size = upstream_allocation_size(bytes);
-    void* pointer   = upstream_->allocate(size, stream);
+    void* pointer   = get_property(upstream_, rmm::legacy_device_mr{})->allocate(size, stream);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto const address         = reinterpret_cast<std::size_t>(pointer);
     auto const aligned_address = rmm::detail::align_up(address, alignment_);
@@ -154,7 +154,7 @@ class aligned_resource_adaptor final : public device_memory_resource {
   void do_deallocate(void* ptr, std::size_t bytes, cuda_stream_view stream) override
   {
     if (alignment_ == rmm::detail::CUDA_ALLOCATION_ALIGNMENT || bytes < alignment_threshold_) {
-      upstream_->deallocate(ptr, bytes, stream);
+      get_property(upstream_, rmm::legacy_device_mr{})->deallocate(ptr, bytes, stream);
     } else {
       {
         lock_guard lock(mtx_);
@@ -164,7 +164,8 @@ class aligned_resource_adaptor final : public device_memory_resource {
           pointers_.erase(iter);
         }
       }
-      upstream_->deallocate(ptr, upstream_allocation_size(bytes), stream);
+      get_property(upstream_, rmm::legacy_device_mr{})
+        ->deallocate(ptr, upstream_allocation_size(bytes), stream);
     }
   }
 
@@ -179,7 +180,8 @@ class aligned_resource_adaptor final : public device_memory_resource {
   {
     if (this == &other) { return true; }
     auto cast = dynamic_cast<aligned_resource_adaptor<Upstream> const*>(&other);
-    return cast != nullptr && upstream_->is_equal(*cast->get_upstream()) &&
+    return cast != nullptr &&
+           get_property(upstream_, rmm::legacy_device_mr{})->is_equal(*cast->get_upstream()) &&
            alignment_ == cast->alignment_ && alignment_threshold_ == cast->alignment_threshold_;
   }
 
@@ -196,7 +198,7 @@ class aligned_resource_adaptor final : public device_memory_resource {
   [[nodiscard]] std::pair<std::size_t, std::size_t> do_get_mem_info(
     cuda_stream_view stream) const override
   {
-    return upstream_->get_mem_info(stream);
+    return get_property(upstream_, rmm::legacy_device_mr{})->get_mem_info(stream);
   }
 
   /**
@@ -212,7 +214,7 @@ class aligned_resource_adaptor final : public device_memory_resource {
     return aligned_size + alignment_ - rmm::detail::CUDA_ALLOCATION_ALIGNMENT;
   }
 
-  Upstream* upstream_;  ///< The upstream resource used for satisfying allocation requests
+  device_resource_ref upstream_;  ///< The upstream resource used for satisfying allocation requests
   std::unordered_map<void*, void*> pointers_;  ///< Map of aligned pointers to upstream pointers.
   std::size_t alignment_;                      ///< The size used for allocation alignment
   std::size_t alignment_threshold_;  ///< The size above which allocations should be aligned
