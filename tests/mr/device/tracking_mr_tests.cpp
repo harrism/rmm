@@ -35,12 +35,6 @@ constexpr auto num_allocations{10};
 constexpr auto num_more_allocations{5};
 constexpr auto ten_MiB{10_MiB};
 
-TEST(TrackingTest, ThrowOnNullUpstream)
-{
-  auto construct_nullptr = []() { tracking_adaptor mr{nullptr}; };
-  EXPECT_THROW(construct_nullptr(), rmm::logic_error);
-}
-
 TEST(TrackingTest, Empty)
 {
   tracking_adaptor mr{rmm::mr::get_current_device_resource()};
@@ -141,7 +135,7 @@ TEST(TrackingTest, MultiTracking)
   EXPECT_EQ(inner_mr.get_allocated_bytes(), 0);
 
   // Reset the current device resource
-  rmm::mr::set_current_device_resource(mr.get_upstream());
+  rmm::mr::set_current_device_resource(legacy(mr.get_upstream()));
 }
 
 TEST(TrackingTest, NegativeInnerTracking)

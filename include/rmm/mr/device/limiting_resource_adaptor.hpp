@@ -18,6 +18,7 @@
 #include <rmm/detail/aligned.hpp>
 #include <rmm/detail/error.hpp>
 #include <rmm/mr/device/device_memory_resource.hpp>
+#include <rmm/mr/resource_ref.hpp>
 
 #include <cstddef>
 
@@ -52,15 +53,14 @@ class limiting_resource_adaptor final : public device_memory_resource {
    * @param allocation_limit Maximum memory allowed for this allocator
    * @param alignment Alignment in bytes for the start of each allocated buffer
    */
-  limiting_resource_adaptor(Upstream* upstream,
+  limiting_resource_adaptor(device_resource_ref upstream,
                             std::size_t allocation_limit,
                             std::size_t alignment = rmm::detail::CUDA_ALLOCATION_ALIGNMENT)
-    : allocation_limit_{allocation_limit},
+    : upstream_{upstream},
+      allocation_limit_{allocation_limit},
       allocated_bytes_(0),
-      alignment_(alignment),
-      upstream_{upstream}
+      alignment_(alignment)
   {
-    RMM_EXPECTS(nullptr != upstream, "Unexpected null upstream resource pointer.");
   }
 
   limiting_resource_adaptor()                                 = delete;
@@ -75,7 +75,7 @@ class limiting_resource_adaptor final : public device_memory_resource {
   /**
    * @briefreturn{Pointer to the upstream resource}
    */
-  [[nodiscard]] Upstream* get_upstream() const noexcept { return upstream_; }
+  [[nodiscard]] device_resource_ref get_upstream() const noexcept { return upstream_; }
 
   /**
    * @brief Checks whether the upstream resource supports streams.
@@ -85,7 +85,7 @@ class limiting_resource_adaptor final : public device_memory_resource {
    */
   [[nodiscard]] bool supports_streams() const noexcept override
   {
-    return upstream_->supports_streams();
+    return legacy(upstream_)->supports_streams();
   }
 
   /**
@@ -95,7 +95,7 @@ class limiting_resource_adaptor final : public device_memory_resource {
    */
   [[nodiscard]] bool supports_get_mem_info() const noexcept override
   {
-    return upstream_->supports_get_mem_info();
+    return legacy(upstream_)->supports_get_mem_info();
   }
 
   /**
@@ -138,7 +138,7 @@ class limiting_resource_adaptor final : public device_memory_resource {
     auto const old           = allocated_bytes_.fetch_add(proposed_size);
     if (old + proposed_size <= allocation_limit_) {
       try {
-        return upstream_->allocate(bytes, stream);
+        return legacy(upstream_)->allocate(bytes, stream);
       } catch (...) {
         allocated_bytes_ -= proposed_size;
         throw;
@@ -159,7 +159,7 @@ class limiting_resource_adaptor final : public device_memory_resource {
   void do_deallocate(void* ptr, std::size_t bytes, cuda_stream_view stream) override
   {
     std::size_t allocated_size = rmm::detail::align_up(bytes, alignment_);
-    upstream_->deallocate(ptr, bytes, stream);
+    legacy(upstream_)->deallocate(ptr, bytes, stream);
     allocated_bytes_ -= allocated_size;
   }
 
@@ -172,10 +172,25 @@ class limiting_resource_adaptor final : public device_memory_resource {
    */
   [[nodiscard]] bool do_is_equal(device_memory_resource const& other) const noexcept override
   {
-    if (this == &other) { return true; }
+    return *this == other;
+    /*if (this == &other) { return true; }
     auto const* cast = dynamic_cast<limiting_resource_adaptor<Upstream> const*>(&other);
     if (cast != nullptr) { return upstream_->is_equal(*cast->get_upstream()); }
-    return upstream_->is_equal(other);
+    return upstream_->is_equal(other);*/
+  }
+
+  [[nodiscard]] friend bool operator==(limiting_resource_adaptor const& lhs,
+                                       device_memory_resource const& rhs) noexcept
+  {
+    if (&lhs == &rhs) { return true; }
+    return (lhs.get_upstream() == device_resource_ref{const_cast<device_memory_resource&>(rhs)});
+  }
+
+  [[nodiscard]] friend bool operator==(limiting_resource_adaptor const& lhs,
+                                       limiting_resource_adaptor const& rhs) noexcept
+  {
+    if (&lhs == &rhs) { return true; }
+    return (lhs.get_upstream() == rhs.get_upstream());
   }
 
   /**
@@ -192,6 +207,9 @@ class limiting_resource_adaptor final : public device_memory_resource {
     return {allocation_limit_ - allocated_bytes_, allocation_limit_};
   }
 
+  device_resource_ref upstream_;  ///< The upstream resource used for satisfying
+                                  ///< allocation requests
+
   // maximum bytes this allocator is allowed to allocate.
   std::size_t allocation_limit_;
 
@@ -200,9 +218,6 @@ class limiting_resource_adaptor final : public device_memory_resource {
 
   // todo: should be some way to ask the upstream...
   std::size_t alignment_;
-
-  Upstream* upstream_;  ///< The upstream resource used for satisfying
-                        ///< allocation requests
 };
 
 /**

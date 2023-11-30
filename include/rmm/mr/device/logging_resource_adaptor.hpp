@@ -15,6 +15,7 @@
  */
 #pragma once
 
+#include "rmm/mr/resource_ref.hpp"
 #include <rmm/cuda_stream_view.hpp>
 #include <rmm/detail/error.hpp>
 #include <rmm/mr/device/device_memory_resource.hpp>
@@ -71,13 +72,11 @@ class logging_resource_adaptor final : public device_memory_resource {
    * @param auto_flush If true, flushes the log for every (de)allocation. Warning, this will degrade
    * performance.
    */
-  logging_resource_adaptor(Upstream* upstream,
+  logging_resource_adaptor(device_resource_ref upstream,
                            std::string const& filename = get_default_filename(),
                            bool auto_flush             = false)
-    : logger_{make_logger(filename)}, upstream_{upstream}
+    : upstream_{upstream}, logger_{make_logger(filename)}
   {
-    RMM_EXPECTS(nullptr != upstream, "Unexpected null upstream resource pointer.");
-
     init_logger(auto_flush);
   }
 
@@ -95,11 +94,11 @@ class logging_resource_adaptor final : public device_memory_resource {
    * @param auto_flush If true, flushes the log for every (de)allocation. Warning, this will degrade
    * performance.
    */
-  logging_resource_adaptor(Upstream* upstream, std::ostream& stream, bool auto_flush = false)
-    : logger_{make_logger(stream)}, upstream_{upstream}
+  logging_resource_adaptor(device_resource_ref upstream,
+                           std::ostream& stream,
+                           bool auto_flush = false)
+    : upstream_{upstream}, logger_{make_logger(stream)}
   {
-    RMM_EXPECTS(nullptr != upstream, "Unexpected null upstream resource pointer.");
-
     init_logger(auto_flush);
   }
 
@@ -117,13 +116,11 @@ class logging_resource_adaptor final : public device_memory_resource {
    * @param auto_flush If true, flushes the log for every (de)allocation. Warning, this will degrade
    * performance.
    */
-  logging_resource_adaptor(Upstream* upstream,
+  logging_resource_adaptor(device_resource_ref upstream,
                            spdlog::sinks_init_list sinks,
                            bool auto_flush = false)
-    : logger_{make_logger(sinks)}, upstream_{upstream}
+    : upstream_{upstream}, logger_{make_logger(sinks)}
   {
-    RMM_EXPECTS(nullptr != upstream, "Unexpected null upstream resource pointer.");
-
     init_logger(auto_flush);
   }
 
@@ -141,7 +138,7 @@ class logging_resource_adaptor final : public device_memory_resource {
    *
    * @return Upstream* Pointer to the upstream resource.
    */
-  [[nodiscard]] Upstream* get_upstream() const noexcept { return upstream_; }
+  [[nodiscard]] device_resource_ref get_upstream() const noexcept { return upstream_; }
 
   /**
    * @brief Checks whether the upstream resource supports streams.
@@ -151,7 +148,7 @@ class logging_resource_adaptor final : public device_memory_resource {
    */
   [[nodiscard]] bool supports_streams() const noexcept override
   {
-    return upstream_->supports_streams();
+    return legacy(upstream_)->supports_streams();
   }
 
   /**
@@ -161,7 +158,7 @@ class logging_resource_adaptor final : public device_memory_resource {
    */
   [[nodiscard]] bool supports_get_mem_info() const noexcept override
   {
-    return upstream_->supports_get_mem_info();
+    return legacy(upstream_)->supports_get_mem_info();
   }
 
   /**
@@ -251,7 +248,7 @@ class logging_resource_adaptor final : public device_memory_resource {
   void* do_allocate(std::size_t bytes, cuda_stream_view stream) override
   {
     try {
-      auto const ptr = upstream_->allocate(bytes, stream);
+      auto* const ptr = legacy(upstream_)->allocate(bytes, stream);
       logger_->info("allocate,{},{},{}", ptr, bytes, fmt::ptr(stream.value()));
       return ptr;
     } catch (...) {
@@ -277,7 +274,7 @@ class logging_resource_adaptor final : public device_memory_resource {
   void do_deallocate(void* ptr, std::size_t bytes, cuda_stream_view stream) override
   {
     logger_->info("free,{},{},{}", ptr, bytes, fmt::ptr(stream.value()));
-    upstream_->deallocate(ptr, bytes, stream);
+    legacy(upstream_)->deallocate(ptr, bytes, stream);
   }
 
   /**
@@ -289,10 +286,25 @@ class logging_resource_adaptor final : public device_memory_resource {
    */
   [[nodiscard]] bool do_is_equal(device_memory_resource const& other) const noexcept override
   {
-    if (this == &other) { return true; }
+    return *this == other;
+    /*if (this == &other) { return true; }
     auto const* cast = dynamic_cast<logging_resource_adaptor<Upstream> const*>(&other);
-    if (cast != nullptr) { return upstream_->is_equal(*cast->get_upstream()); }
-    return upstream_->is_equal(other);
+    if (cast != nullptr) { return legacy(upstream_->is_equal(*cast->get_upstream()); }
+    return upstream_->is_equal(other);*/
+  }
+
+  [[nodiscard]] friend bool operator==(logging_resource_adaptor const& lhs,
+                                       device_memory_resource const& rhs) noexcept
+  {
+    if (&lhs == &rhs) { return true; }
+    return (lhs.get_upstream() == device_resource_ref{const_cast<device_memory_resource&>(rhs)});
+  }
+
+  [[nodiscard]] friend bool operator==(logging_resource_adaptor const& lhs,
+                                       logging_resource_adaptor const& rhs) noexcept
+  {
+    if (&lhs == &rhs) { return true; }
+    return (lhs.get_upstream() == rhs.get_upstream());
   }
 
   /**
@@ -306,7 +318,7 @@ class logging_resource_adaptor final : public device_memory_resource {
   [[nodiscard]] std::pair<std::size_t, std::size_t> do_get_mem_info(
     cuda_stream_view stream) const override
   {
-    return upstream_->get_mem_info(stream);
+    return legacy(upstream_)->get_mem_info(stream);
   }
 
   // make_logging_adaptor needs access to private get_default_filename
@@ -316,10 +328,10 @@ class logging_resource_adaptor final : public device_memory_resource {
                                                           std::string const& filename,
                                                           bool auto_flush);
 
-  std::shared_ptr<spdlog::logger> logger_;  ///< spdlog logger object
+  device_resource_ref upstream_;  ///< The upstream resource used for satisfying
+                                  ///< allocation requests
 
-  Upstream* upstream_;  ///< The upstream resource used for satisfying
-                        ///< allocation requests
+  std::shared_ptr<spdlog::logger> logger_;  ///< spdlog logger object
 };
 
 /**

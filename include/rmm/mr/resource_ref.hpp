@@ -37,4 +37,12 @@ struct legacy_device_mr {
 using device_resource_ref =
   cuda::mr::async_resource_ref<cuda::mr::device_accessible, legacy_device_mr>;
 
+/**
+ * @brief Helper to get the legacy device_memory_resource from a device_resource_ref.
+ */
+[[nodiscard]] inline rmm::mr::device_memory_resource* legacy(device_resource_ref const& ref)
+{
+  return get_property(ref, legacy_device_mr{});
+}
+
 }  // namespace rmm

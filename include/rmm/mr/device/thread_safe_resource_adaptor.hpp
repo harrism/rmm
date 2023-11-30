@@ -18,6 +18,7 @@
 #include <rmm/cuda_stream_view.hpp>
 #include <rmm/detail/error.hpp>
 #include <rmm/mr/device/device_memory_resource.hpp>
+#include <rmm/mr/resource_ref.hpp>
 
 #include <cstddef>
 #include <mutex>
@@ -52,10 +53,7 @@ class thread_safe_resource_adaptor final : public device_memory_resource {
    *
    * @param upstream The resource used for allocating/deallocating device memory.
    */
-  thread_safe_resource_adaptor(Upstream* upstream) : upstream_{upstream}
-  {
-    RMM_EXPECTS(nullptr != upstream, "Unexpected null upstream resource pointer.");
-  }
+  thread_safe_resource_adaptor(device_resource_ref upstream) : upstream_{upstream} {}
 
   thread_safe_resource_adaptor()                                               = delete;
   ~thread_safe_resource_adaptor() override                                     = default;
@@ -69,12 +67,12 @@ class thread_safe_resource_adaptor final : public device_memory_resource {
    *
    * @return Upstream* pointer to a memory resource object.
    */
-  Upstream* get_upstream() const noexcept { return upstream_; }
+  device_resource_ref get_upstream() const noexcept { return upstream_; }
 
   /**
    * @copydoc rmm::mr::device_memory_resource::supports_streams()
    */
-  bool supports_streams() const noexcept override { return upstream_->supports_streams(); }
+  bool supports_streams() const noexcept override { return legacy(upstream_)->supports_streams(); }
 
   /**
    * @brief Query whether the resource supports the get_mem_info API.
@@ -83,7 +81,7 @@ class thread_safe_resource_adaptor final : public device_memory_resource {
    */
   bool supports_get_mem_info() const noexcept override
   {
-    return upstream_->supports_get_mem_info();
+    return legacy(upstream_)->supports_get_mem_info();
   }
 
  private:
@@ -101,7 +99,7 @@ class thread_safe_resource_adaptor final : public device_memory_resource {
   void* do_allocate(std::size_t bytes, cuda_stream_view stream) override
   {
     lock_t lock(mtx);
-    return upstream_->allocate(bytes, stream);
+    return legacy(upstream_)->allocate(bytes, stream);
   }
 
   /**
@@ -114,7 +112,7 @@ class thread_safe_resource_adaptor final : public device_memory_resource {
   void do_deallocate(void* ptr, std::size_t bytes, cuda_stream_view stream) override
   {
     lock_t lock(mtx);
-    upstream_->deallocate(ptr, bytes, stream);
+    legacy(upstream_)->deallocate(ptr, bytes, stream);
   }
 
   /**
@@ -126,12 +124,27 @@ class thread_safe_resource_adaptor final : public device_memory_resource {
    */
   bool do_is_equal(device_memory_resource const& other) const noexcept override
   {
-    if (this == &other) { return true; }
+    return *this == other;
+    /*if (this == &other) { return true; }
     auto thread_safe_other = dynamic_cast<thread_safe_resource_adaptor<Upstream> const*>(&other);
     if (thread_safe_other != nullptr) {
       return upstream_->is_equal(*thread_safe_other->get_upstream());
     }
-    return upstream_->is_equal(other);
+    return upstream_->is_equal(other);*/
+  }
+
+  [[nodiscard]] friend bool operator==(thread_safe_resource_adaptor const& lhs,
+                                       device_memory_resource const& rhs) noexcept
+  {
+    if (&lhs == &rhs) { return true; }
+    return (lhs.get_upstream() == device_resource_ref{const_cast<device_memory_resource&>(rhs)});
+  }
+
+  [[nodiscard]] friend bool operator==(thread_safe_resource_adaptor const& lhs,
+                                       thread_safe_resource_adaptor const& rhs) noexcept
+  {
+    if (&lhs == &rhs) { return true; }
+    return (lhs.get_upstream() == rhs.get_upstream());
   }
 
   /**
@@ -145,11 +158,11 @@ class thread_safe_resource_adaptor final : public device_memory_resource {
   std::pair<std::size_t, std::size_t> do_get_mem_info(cuda_stream_view stream) const override
   {
     lock_t lock(mtx);
-    return upstream_->get_mem_info(stream);
+    return legacy(upstream_)->get_mem_info(stream);
   }
 
-  std::mutex mutable mtx;  // mutex for thread safe access to upstream
-  Upstream* upstream_;     ///< The upstream resource used for satisfying allocation requests
+  std::mutex mutable mtx;         // mutex for thread safe access to upstream
+  device_resource_ref upstream_;  ///< The upstream resource used for satisfying allocation requests
 };
 
 /** @} */  // end of group

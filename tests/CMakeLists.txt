@@ -41,6 +41,12 @@ function(ConfigureTestInternal TEST_NAME)
   target_compile_options(${TEST_NAME} PUBLIC $<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-Wall -Werror
                                              -Wno-error=deprecated-declarations>)
 
+    # Set compile options based on build type
+    target_compile_options(${TEST_NAME} PUBLIC
+                                        $<$<CONFIG:Debug>:$<$<COMPILE_LANGUAGE:CUDA>:-O0>>
+                                        $<$<CONFIG:Debug>:$<$<COMPILE_LANGUAGE:CXX>:-O0>>
+  )
+
   if(DISABLE_DEPRECATION_WARNING)
     target_compile_options(
       ${TEST_NAME} PUBLIC $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=-Wno-deprecated-declarations>)

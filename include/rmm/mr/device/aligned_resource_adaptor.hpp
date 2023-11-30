@@ -86,14 +86,14 @@ class aligned_resource_adaptor final : public device_memory_resource {
    *
    * @return Upstream* pointer to a memory resource object.
    */
-  device_resource_ref get_upstream() const noexcept { return upstream_; }
+  [[nodiscard]] device_resource_ref get_upstream() const noexcept { return upstream_; }
 
   /**
    * @copydoc rmm::mr::device_memory_resource::supports_streams()
    */
   [[nodiscard]] bool supports_streams() const noexcept override
   {
-    return get_property(upstream_, rmm::legacy_device_mr{})->supports_streams();
+    return legacy(upstream_)->supports_streams();
   }
 
   /**
@@ -103,7 +103,7 @@ class aligned_resource_adaptor final : public device_memory_resource {
    */
   [[nodiscard]] bool supports_get_mem_info() const noexcept override
   {
-    return get_property(upstream_, rmm::legacy_device_mr{})->supports_get_mem_info();
+    return legacy(upstream_)->supports_get_mem_info();
   }
 
   /**
@@ -128,10 +128,10 @@ class aligned_resource_adaptor final : public device_memory_resource {
   void* do_allocate(std::size_t bytes, cuda_stream_view stream) override
   {
     if (alignment_ == rmm::detail::CUDA_ALLOCATION_ALIGNMENT || bytes < alignment_threshold_) {
-      return get_property(upstream_, rmm::legacy_device_mr{})->allocate(bytes, stream);
+      return legacy(upstream_)->allocate(bytes, stream);
     }
     auto const size = upstream_allocation_size(bytes);
-    void* pointer   = get_property(upstream_, rmm::legacy_device_mr{})->allocate(size, stream);
+    void* pointer   = legacy(upstream_)->allocate(size, stream);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto const address         = reinterpret_cast<std::size_t>(pointer);
     auto const aligned_address = rmm::detail::align_up(address, alignment_);
@@ -154,7 +154,7 @@ class aligned_resource_adaptor final : public device_memory_resource {
   void do_deallocate(void* ptr, std::size_t bytes, cuda_stream_view stream) override
   {
     if (alignment_ == rmm::detail::CUDA_ALLOCATION_ALIGNMENT || bytes < alignment_threshold_) {
-      get_property(upstream_, rmm::legacy_device_mr{})->deallocate(ptr, bytes, stream);
+      legacy(upstream_)->deallocate(ptr, bytes, stream);
     } else {
       {
         lock_guard lock(mtx_);
@@ -164,8 +164,7 @@ class aligned_resource_adaptor final : public device_memory_resource {
           pointers_.erase(iter);
         }
       }
-      get_property(upstream_, rmm::legacy_device_mr{})
-        ->deallocate(ptr, upstream_allocation_size(bytes), stream);
+      legacy(upstream_)->deallocate(ptr, upstream_allocation_size(bytes), stream);
     }
   }
 
@@ -178,12 +177,32 @@ class aligned_resource_adaptor final : public device_memory_resource {
    */
   [[nodiscard]] bool do_is_equal(device_memory_resource const& other) const noexcept override
   {
+    std::cout << "do_is_equal\n";
     if (this == &other) { return true; }
+    std::cout << "do_is_equal: before cast\n";
     auto cast = dynamic_cast<aligned_resource_adaptor<Upstream> const*>(&other);
-    return cast != nullptr &&
-           get_property(upstream_, rmm::legacy_device_mr{})
-             ->is_equal(*get_property(cast->get_upstream(), rmm::legacy_device_mr{})) &&
-           alignment_ == cast->alignment_ && alignment_threshold_ == cast->alignment_threshold_;
+    std::cout << "do_is_equal: after cast" << cast << "\n";
+
+    if (cast == nullptr) return false;
+    auto cast_upstream = cast->get_upstream();
+    auto upstream      = get_upstream();
+    std::cout << "do_is_equal: after cast->get_upstream" << &upstream << " " << &cast_upstream
+              << "\n";
+
+    bool upstream_equal = (get_upstream() == cast_upstream);
+    std::cout << "do_is_equal: after upstream_equal\n";
+
+    return upstream_equal && (alignment_ == cast->alignment_) &&
+           (alignment_threshold_ == cast->alignment_threshold_);
+  }
+
+  [[nodiscard]] friend bool operator==(aligned_resource_adaptor const& lhs,
+                                       aligned_resource_adaptor const& rhs) noexcept
+  {
+    std::cout << "operator==\n";
+    if (&lhs == &rhs) { return true; }
+    return (lhs.get_upstream() == rhs.get_upstream()) && (lhs.alignment_ == rhs.alignment_) &&
+           (lhs.alignment_threshold_ == rhs.alignment_threshold_);
   }
 
   /**
@@ -199,7 +218,7 @@ class aligned_resource_adaptor final : public device_memory_resource {
   [[nodiscard]] std::pair<std::size_t, std::size_t> do_get_mem_info(
     cuda_stream_view stream) const override
   {
-    return get_property(upstream_, rmm::legacy_device_mr{})->get_mem_info(stream);
+    return legacy(upstream_)->get_mem_info(stream);
   }
 
   /**

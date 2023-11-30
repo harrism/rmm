@@ -15,6 +15,7 @@
  */
 #pragma once
 
+#include "rmm/mr/resource_ref.hpp"
 #include <rmm/detail/error.hpp>
 #include <rmm/detail/stack_trace.hpp>
 #include <rmm/logger.hpp>
@@ -90,10 +91,9 @@ class tracking_resource_adaptor final : public device_memory_resource {
    * @param upstream The resource used for allocating/deallocating device memory
    * @param capture_stacks If true, capture stacks for allocation calls
    */
-  tracking_resource_adaptor(Upstream* upstream, bool capture_stacks = false)
-    : capture_stacks_{capture_stacks}, allocated_bytes_{0}, upstream_{upstream}
+  tracking_resource_adaptor(device_resource_ref upstream, bool capture_stacks = false)
+    : upstream_{upstream}, capture_stacks_{capture_stacks}, allocated_bytes_{0}
   {
-    RMM_EXPECTS(nullptr != upstream, "Unexpected null upstream resource pointer.");
   }
 
   tracking_resource_adaptor()                                 = delete;
@@ -108,7 +108,7 @@ class tracking_resource_adaptor final : public device_memory_resource {
   /**
    * @briefreturn{Pointer to the upstream resource}
    */
-  Upstream* get_upstream() const noexcept { return upstream_; }
+  [[nodiscard]] device_resource_ref get_upstream() const noexcept { return upstream_; }
 
   /**
    * @brief Checks whether the upstream resource supports streams.
@@ -116,16 +116,19 @@ class tracking_resource_adaptor final : public device_memory_resource {
    * @return true The upstream resource supports streams
    * @return false The upstream resource does not support streams.
    */
-  bool supports_streams() const noexcept override { return upstream_->supports_streams(); }
+  [[nodiscard]] bool supports_streams() const noexcept override
+  {
+    return legacy(upstream_)->supports_streams();
+  }
 
   /**
    * @brief Query whether the resource supports the get_mem_info API.
    *
    * @return bool true if the upstream resource supports get_mem_info, false otherwise.
    */
-  bool supports_get_mem_info() const noexcept override
+  [[nodiscard]] bool supports_get_mem_info() const noexcept override
   {
-    return upstream_->supports_get_mem_info();
+    return legacy(upstream_)->supports_get_mem_info();
   }
 
   /**
@@ -161,7 +164,7 @@ class tracking_resource_adaptor final : public device_memory_resource {
    *
    * @return std::string Containing the outstanding allocation pointers.
    */
-  std::string get_outstanding_allocations_str() const
+  [[nodiscard]] std::string get_outstanding_allocations_str() const
   {
     read_lock_t lock(mtx_);
 
@@ -207,7 +210,7 @@ class tracking_resource_adaptor final : public device_memory_resource {
    */
   void* do_allocate(std::size_t bytes, cuda_stream_view stream) override
   {
-    void* ptr = upstream_->allocate(bytes, stream);
+    void* ptr = legacy(upstream_)->allocate(bytes, stream);
 
     // track it.
     {
@@ -228,7 +231,7 @@ class tracking_resource_adaptor final : public device_memory_resource {
    */
   void do_deallocate(void* ptr, std::size_t bytes, cuda_stream_view stream) override
   {
-    upstream_->deallocate(ptr, bytes, stream);
+    legacy(upstream_)->deallocate(ptr, bytes, stream);
     {
       write_lock_t lock(mtx_);
 
@@ -271,10 +274,25 @@ class tracking_resource_adaptor final : public device_memory_resource {
    */
   bool do_is_equal(device_memory_resource const& other) const noexcept override
   {
-    if (this == &other) { return true; }
-    auto cast = dynamic_cast<tracking_resource_adaptor<Upstream> const*>(&other);
-    return cast != nullptr ? upstream_->is_equal(*cast->get_upstream())
-                           : upstream_->is_equal(other);
+    return *this == other;
+    // if (this == &other) { return true; }
+    // auto cast = dynamic_cast<tracking_resource_adaptor<Upstream> const*>(&other);
+    // return cast != nullptr ? upstream_->is_equal(*cast->get_upstream())
+    //                        : upstream_->is_equal(other);
+  }
+
+  [[nodiscard]] friend bool operator==(tracking_resource_adaptor const& lhs,
+                                       device_memory_resource const& rhs) noexcept
+  {
+    if (&lhs == &rhs) { return true; }
+    return (lhs.get_upstream() == device_resource_ref{const_cast<device_memory_resource&>(rhs)});
+  }
+
+  [[nodiscard]] friend bool operator==(tracking_resource_adaptor const& lhs,
+                                       tracking_resource_adaptor const& rhs) noexcept
+  {
+    if (&lhs == &rhs) { return true; }
+    return (lhs.get_upstream() == rhs.get_upstream());
   }
 
   /**
@@ -287,14 +305,14 @@ class tracking_resource_adaptor final : public device_memory_resource {
    */
   std::pair<std::size_t, std::size_t> do_get_mem_info(cuda_stream_view stream) const override
   {
-    return upstream_->get_mem_info(stream);
+    return legacy(upstream_)->get_mem_info(stream);
   }
 
-  bool capture_stacks_;                           // whether or not to capture call stacks
+  device_resource_ref upstream_;  // the upstream resource used for satisfying allocation requests
+  bool capture_stacks_;           // whether or not to capture call stacks
   std::map<void*, allocation_info> allocations_;  // map of active allocations
   std::atomic<std::size_t> allocated_bytes_;      // number of bytes currently allocated
   std::shared_timed_mutex mutable mtx_;           // mutex for thread safe access to allocations_
-  Upstream* upstream_;  // the upstream resource used for satisfying allocation requests
 };
 
 /**

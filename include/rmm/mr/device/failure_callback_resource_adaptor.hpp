@@ -17,6 +17,7 @@
 
 #include <rmm/detail/error.hpp>
 #include <rmm/mr/device/device_memory_resource.hpp>
+#include <rmm/mr/resource_ref.hpp>
 
 #include <cstddef>
 #include <functional>
@@ -102,12 +103,11 @@ class failure_callback_resource_adaptor final : public device_memory_resource {
    * @param callback Callback function @see failure_callback_t
    * @param callback_arg Extra argument passed to `callback`
    */
-  failure_callback_resource_adaptor(Upstream* upstream,
+  failure_callback_resource_adaptor(device_resource_ref upstream,
                                     failure_callback_t callback,
                                     void* callback_arg)
     : upstream_{upstream}, callback_{std::move(callback)}, callback_arg_{callback_arg}
   {
-    RMM_EXPECTS(nullptr != upstream, "Unexpected null upstream resource pointer.");
   }
 
   failure_callback_resource_adaptor()                                                    = delete;
@@ -122,7 +122,7 @@ class failure_callback_resource_adaptor final : public device_memory_resource {
   /**
    * @briefreturn{Pointer to the upstream resource}
    */
-  Upstream* get_upstream() const noexcept { return upstream_; }
+  [[nodiscard]] device_resource_ref get_upstream() const noexcept { return upstream_; }
 
   /**
    * @brief Checks whether the upstream resource supports streams.
@@ -132,7 +132,7 @@ class failure_callback_resource_adaptor final : public device_memory_resource {
    */
   [[nodiscard]] bool supports_streams() const noexcept override
   {
-    return upstream_->supports_streams();
+    return legacy(upstream_)->supports_streams();
   }
 
   /**
@@ -142,7 +142,7 @@ class failure_callback_resource_adaptor final : public device_memory_resource {
    */
   [[nodiscard]] bool supports_get_mem_info() const noexcept override
   {
-    return upstream_->supports_get_mem_info();
+    return legacy(upstream_)->supports_get_mem_info();
   }
 
  private:
@@ -163,7 +163,7 @@ class failure_callback_resource_adaptor final : public device_memory_resource {
 
     while (true) {
       try {
-        ret = upstream_->allocate(bytes, stream);
+        ret = legacy(upstream_)->allocate(bytes, stream);
         break;
       } catch (exception_type const& e) {
         if (!callback_(bytes, callback_arg_)) { throw; }
@@ -181,7 +181,7 @@ class failure_callback_resource_adaptor final : public device_memory_resource {
    */
   void do_deallocate(void* ptr, std::size_t bytes, cuda_stream_view stream) override
   {
-    upstream_->deallocate(ptr, bytes, stream);
+    legacy(upstream_)->deallocate(ptr, bytes, stream);
   }
 
   /**
@@ -193,10 +193,18 @@ class failure_callback_resource_adaptor final : public device_memory_resource {
    */
   [[nodiscard]] bool do_is_equal(device_memory_resource const& other) const noexcept override
   {
-    if (this == &other) { return true; }
+    return *this == other;
+    /*if (this == &other) { return true; }
     auto cast = dynamic_cast<failure_callback_resource_adaptor<Upstream> const*>(&other);
     return cast != nullptr ? upstream_->is_equal(*cast->get_upstream())
-                           : upstream_->is_equal(other);
+                           : upstream_->is_equal(other);*/
+  }
+
+  [[nodiscard]] friend bool operator==(failure_callback_resource_adaptor const& lhs,
+                                       failure_callback_resource_adaptor const& rhs) noexcept
+  {
+    if (&lhs == &rhs) { return true; }
+    return (lhs.get_upstream() == rhs.get_upstream());
   }
 
   /**
@@ -210,10 +218,10 @@ class failure_callback_resource_adaptor final : public device_memory_resource {
   [[nodiscard]] std::pair<std::size_t, std::size_t> do_get_mem_info(
     cuda_stream_view stream) const override
   {
-    return upstream_->get_mem_info(stream);
+    return legacy(upstream_)->get_mem_info(stream);
   }
 
-  Upstream* upstream_;  // the upstream resource used for satisfying allocation requests
+  device_resource_ref upstream_;  // the upstream resource used for satisfying allocation requests
   failure_callback_t callback_;
   void* callback_arg_;
 };
