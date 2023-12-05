@@ -177,23 +177,18 @@ class aligned_resource_adaptor final : public device_memory_resource {
    */
   [[nodiscard]] bool do_is_equal(device_memory_resource const& other) const noexcept override
   {
-    std::cout << "do_is_equal\n";
     if (this == &other) { return true; }
-    std::cout << "do_is_equal: before cast\n";
+    auto const* cast = dynamic_cast<aligned_resource_adaptor<Upstream> const*>(&other);
+    if (cast == nullptr) { return false; }
+    return *this == *cast;
+    /*if (this == &other) { return true; }
     auto cast = dynamic_cast<aligned_resource_adaptor<Upstream> const*>(&other);
-    std::cout << "do_is_equal: after cast" << cast << "\n";
-
-    if (cast == nullptr) return false;
-    auto cast_upstream = cast->get_upstream();
+    if (cast == nullptr) { return false; }
     auto upstream      = get_upstream();
-    std::cout << "do_is_equal: after cast->get_upstream" << &upstream << " " << &cast_upstream
-              << "\n";
-
-    bool upstream_equal = (get_upstream() == cast_upstream);
-    std::cout << "do_is_equal: after upstream_equal\n";
-
-    return upstream_equal && (alignment_ == cast->alignment_) &&
-           (alignment_threshold_ == cast->alignment_threshold_);
+    auto cast_upstream = cast->get_upstream();
+    auto cast_equal    = upstream == cast_upstream;
+    return cast_equal && (alignment_ == cast->alignment_) &&
+           (alignment_threshold_ == cast->alignment_threshold_);*/
   }
 
   [[nodiscard]] friend bool operator==(aligned_resource_adaptor const& lhs,

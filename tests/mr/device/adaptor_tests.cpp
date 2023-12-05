@@ -58,14 +58,14 @@ template class rmm::mr::tracking_resource_adaptor<cuda_mr>;
 
 namespace rmm::test {
 
-using adaptors = ::testing::Types<aligned_resource_adaptor<cuda_mr>>; /*,
-                                   failure_callback_resource_adaptor<cuda_mr>,
-                                   limiting_resource_adaptor<cuda_mr>,
-                                   logging_resource_adaptor<cuda_mr>,
-                                   owning_wrapper,
-                                   statistics_resource_adaptor<cuda_mr>,
-                                   thread_safe_resource_adaptor<cuda_mr>,
-                                   tracking_resource_adaptor<cuda_mr>>;*/
+using adaptors = ::testing::Types<aligned_resource_adaptor<cuda_mr>,
+                                  failure_callback_resource_adaptor<cuda_mr>,
+                                  limiting_resource_adaptor<cuda_mr>,
+                                  logging_resource_adaptor<cuda_mr>,
+                                  owning_wrapper,
+                                  statistics_resource_adaptor<cuda_mr>,
+                                  thread_safe_resource_adaptor<cuda_mr>,
+                                  tracking_resource_adaptor<cuda_mr>>;
 
 static_assert(
   cuda::mr::resource_with<rmm::mr::aligned_resource_adaptor<cuda_mr>, cuda::mr::device_accessible>);
@@ -88,8 +88,8 @@ template <typename MemoryResourceType>
 struct AdaptorTest : public ::testing::Test {
   using adaptor_type = MemoryResourceType;
 
-  std::unique_ptr<cuda_mr> cuda;
-  rmm::device_resource_ref cuda_ref{cuda.get()};
+  cuda_mr cuda{};
+  rmm::device_resource_ref cuda_ref{cuda};
 
   std::shared_ptr<adaptor_type> mr;
 
@@ -116,23 +116,20 @@ TYPED_TEST_CASE(AdaptorTest, adaptors);
 
 TYPED_TEST(AdaptorTest, Equality)
 {
-  std::cout << "Before is_equal\n";
   EXPECT_TRUE(this->mr->is_equal(*this->mr));
-  std::cout << "After is_equal\n";
-
   {
     auto other_mr = this->make_adaptor(this->cuda_ref);
-    std::cout << "Before is_equal\n";
     EXPECT_TRUE(this->mr->is_equal(*other_mr));
-    std::cout << "After is_equal\n";
   }
 
-  {
-    rmm::device_resource_ref device_mr = this->cuda_ref;
-    auto other_mr = aligned_resource_adaptor<rmm::mr::device_memory_resource>{device_mr};
-    std::cout << "Before is_equal\n";
+  rmm::device_resource_ref device_mr = this->cuda_ref;
+
+  if constexpr (std::is_same_v<TypeParam, aligned_resource_adaptor<cuda_mr>>) {
+    auto other_mr = statistics_resource_adaptor<rmm::mr::device_memory_resource>{device_mr};
     EXPECT_FALSE(this->mr->is_equal(other_mr));
-    std::cout << "After is_equal\n";
+  } else {
+    auto other_mr = aligned_resource_adaptor<rmm::mr::device_memory_resource>{device_mr};
+    EXPECT_FALSE(this->mr->is_equal(other_mr));
   }
 }
 

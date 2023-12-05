@@ -172,8 +172,11 @@ class limiting_resource_adaptor final : public device_memory_resource {
    */
   [[nodiscard]] bool do_is_equal(device_memory_resource const& other) const noexcept override
   {
-    return *this == other;
-    /*if (this == &other) { return true; }
+    if (this == &other) { return true; }
+    auto const* cast = dynamic_cast<limiting_resource_adaptor<Upstream> const*>(&other);
+    if (cast == nullptr) { return false; }
+    return *this == *cast;
+    /*
     auto const* cast = dynamic_cast<limiting_resource_adaptor<Upstream> const*>(&other);
     if (cast != nullptr) { return upstream_->is_equal(*cast->get_upstream()); }
     return upstream_->is_equal(other);*/

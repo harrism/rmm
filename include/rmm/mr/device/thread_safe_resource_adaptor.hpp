@@ -124,7 +124,10 @@ class thread_safe_resource_adaptor final : public device_memory_resource {
    */
   bool do_is_equal(device_memory_resource const& other) const noexcept override
   {
-    return *this == other;
+    if (this == &other) { return true; }
+    auto const* cast = dynamic_cast<thread_safe_resource_adaptor<Upstream> const*>(&other);
+    if (cast == nullptr) { return false; }
+    return *this == *cast;
     /*if (this == &other) { return true; }
     auto thread_safe_other = dynamic_cast<thread_safe_resource_adaptor<Upstream> const*>(&other);
     if (thread_safe_other != nullptr) {

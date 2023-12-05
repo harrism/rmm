@@ -81,7 +81,7 @@ TEST(DefaultTest, GetCurrentDeviceResource_mt)
   spawn([]() {
     rmm::device_resource_ref mr = rmm::mr::get_current_device_resource();
     auto cuda_mr                = rmm::mr::cuda_memory_resource{};
-    EXPECT_TRUE(mr == rmm::device_resource_ref{&cuda_mr});
+    EXPECT_TRUE(mr == rmm::device_resource_ref{cuda_mr});
   });
 }
 

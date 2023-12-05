@@ -217,7 +217,10 @@ class statistics_resource_adaptor final : public device_memory_resource {
    */
   bool do_is_equal(device_memory_resource const& other) const noexcept override
   {
-    return *this == other;
+    if (this == &other) { return true; }
+    auto const* cast = dynamic_cast<statistics_resource_adaptor<Upstream> const*>(&other);
+    if (cast == nullptr) { return false; }
+    return *this == *cast;
     /*if (this == &other) { return true; }
     auto cast = dynamic_cast<statistics_resource_adaptor<Upstream> const*>(&other);
     return cast != nullptr ? upstream_->is_equal(*cast->get_upstream())
