@@ -197,4 +197,6 @@ ConfigureTest(SYSTEM_MR_TEST mr/device/system_mr_tests.cu)
 # container multidevice tests
 ConfigureTest(CONTAINER_MULTIDEVICE_TEST container_multidevice_tests.cu)
 
+ConfigureTest(CUDAX_TEST cudax_tests.cpp)
+
 rapids_test_install_relocatable(INSTALL_COMPONENT_SET testing DESTINATION bin/gtests/librmm)

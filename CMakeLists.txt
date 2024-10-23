@@ -67,6 +67,9 @@ rapids_find_package(
   BUILD_EXPORT_SET rmm-exports
   INSTALL_EXPORT_SET rmm-exports)
 
+include(rapids-cuda)
+rapids_cuda_init_architectures(RMM)
+
 # ##################################################################################################
 # * dependencies -----------------------------------------------------------------------------------
 

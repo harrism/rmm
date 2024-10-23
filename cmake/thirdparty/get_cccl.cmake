@@ -16,6 +16,26 @@
 function(find_and_configure_cccl)
 
   include(${rapids-cmake-dir}/cpm/cccl.cmake)
+  include(${rapids-cmake-dir}/cpm/package_override.cmake)
+  
+  rapids_cpm_package_override("${CMAKE_CURRENT_FUNCTION_LIST_DIR}/cccl_override.json")
+
+  # Make sure we install cccl into the `include/rmm` subdirectory instead of the default
+  include(GNUInstallDirs)
+  set(CMAKE_INSTALL_INCLUDEDIR "${CMAKE_INSTALL_INCLUDEDIR}/rmm")
+  set(CMAKE_INSTALL_LIBDIR "${CMAKE_INSTALL_INCLUDEDIR}/lib")
+
+  # Enable cudax namespace install
+  set(CCCL_ENABLE_UNSTABLE ON)
+
+  # Store where CMake can find our custom CCCL install
+  include("${rapids-cmake-dir}/export/find_package_root.cmake")
+  rapids_export_find_package_root(
+    INSTALL CCCL [=[${CMAKE_CURRENT_LIST_DIR}/../../../include/rmm/lib/rapids/cmake/cccl]=]
+    EXPORT_SET rmm-exports
+  )
+
+  # Find or install CCCL
   rapids_cpm_cccl(BUILD_EXPORT_SET rmm-exports INSTALL_EXPORT_SET rmm-exports)
 
 endfunction()
